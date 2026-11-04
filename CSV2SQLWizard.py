@@ -9,6 +9,8 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QTableWidget, QTableWidg
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
 
+import sql_builder
+
 class SqlViewDialog(QDialog):
     def __init__(self, sql_text, parent=None):
         super().__init__(parent)
@@ -234,55 +236,16 @@ class CSVToSQLConverter(QMainWindow):
     def generate_sql(self):
         if self.df is None:
             return
-        
-        table_name = "table_name"
-        
-        self.sql_statements = []
-        
-        create_sql = f"CREATE TABLE {table_name} (\n"
-        columns = []
-        
-        for original_header in self.headers:
-            new_header = self.original_to_new_headers[original_header]
-            data_type = self.column_types.get(new_header, "VARCHAR(255)")
-            columns.append(f"    {new_header} {data_type}")
-        
-        create_sql += ",\n".join(columns)
-        create_sql += "\n);"
-        
-        self.sql_statements.append(create_sql)
-        
-        insert_header = f"INSERT INTO {table_name} ({', '.join([self.original_to_new_headers[h] for h in self.headers])}) VALUES"
-        insert_values = []
-        
-        for i in range(len(self.df)):
-            values = []
-            for j, col in enumerate(self.df.columns):
-                val = self.df.iloc[i, j]
-                if pd.isna(val):
-                    values.append("NULL")
-                elif isinstance(val, (int, float)):
-                    values.append(str(val))
-                else:
-                    val_str = str(val)
-                    val_str = val_str.replace("'", "''")
-                    values.append(f"'{val_str}'" if val else "NULL")
-            
-            insert_values.append(f"({', '.join(values)})")
-        
-        batch_size = 50
-        for i in range(0, len(insert_values), batch_size):
-            batch = insert_values[i:i+batch_size]
-            insert_sql = insert_header + "\n" + ",\n".join(batch) + ";"
-            
-            self.sql_statements.append(insert_sql)
-        
+
+        self.sql_statements = sql_builder.build(
+            self.df, self.headers, self.original_to_new_headers, self.column_types)
+
         self.save_sql_btn.setEnabled(True)
         self.view_sql_btn.setEnabled(True)
         self.status_bar.showMessage("SQL generated successfully")
-        
+
         self.view_full_sql()
-    
+
     def view_full_sql(self):
         if not self.sql_statements:
             return
