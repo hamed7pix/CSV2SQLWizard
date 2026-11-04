@@ -18,3 +18,13 @@ CSV2SQLWizard is a python application for converting CSV files to SQL tables wit
 - Python 3.6+
 - PyQt5
 - pandas
+
+# Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest -q
+```
+
+The SQL generation lives in `sql_builder.py`, apart from the PyQt5 interface, so
+the tests run without a display.
