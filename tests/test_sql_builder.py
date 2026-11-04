@@ -99,3 +99,70 @@ def test_values_keep_the_column_order_of_headers():
     df = pd.DataFrame({"a": ["first"], "b": ["second"]})
     insert = sql_builder.build(df, ["a", "b"])[1]
     assert insert.endswith("('first', 'second');")
+
+
+# --- numbers and booleans out of pandas --------------------------------
+# A DataFrame hands back numpy scalars, not Python ones, and np.int64 is not
+# an int as far as isinstance is concerned.
+
+@pytest.mark.parametrize("value, expected", [
+    (np.int64(5), "5"),
+    (np.int64(0), "0"),          # a zero is a value, not a missing one
+    (np.int64(-3), "-3"),
+    (np.float64(9.5), "9.5"),
+    (np.float64(0.0), "0.0"),
+    (5, "5"),
+    (0, "0"),
+])
+def test_a_number_is_written_unquoted_whatever_type_carries_it(value, expected):
+    assert sql_builder.sql_literal(value) == expected
+
+
+@pytest.mark.parametrize("value, expected", [
+    (np.bool_(True), "TRUE"),
+    (np.bool_(False), "FALSE"),
+    (True, "TRUE"),
+    (False, "FALSE"),
+])
+def test_a_boolean_becomes_a_sql_boolean(value, expected):
+    assert sql_builder.sql_literal(value) == expected
+
+
+def test_an_empty_field_is_still_null():
+    """Unchanged: an empty CSV cell means no value."""
+    assert sql_builder.sql_literal("") == "NULL"
+
+
+def test_a_zero_in_an_int_column_survives_a_whole_frame():
+    df = pd.DataFrame({"qty": [0, 5], "flag": [False, True]})
+    insert = sql_builder.build(df, ["qty", "flag"])[1]
+    assert "(0, FALSE)" in insert
+    assert "(5, TRUE)" in insert
+    assert "NULL" not in insert
+
+
+def test_the_generated_script_runs_on_sqlite_and_round_trips():
+    """The end the tool exists for: the SQL has to execute and give the data
+    back."""
+    import sqlite3
+
+    df = pd.DataFrame({
+        "id": [1, 0, -3],
+        "price": [9.5, 0.0, 3.25],
+        "name": ["a", "O'Brien", "zero below"],
+        "flag": [True, False, True],
+    })
+    headers = list(df.columns)
+    types = {"id": "INT", "price": "FLOAT", "name": "VARCHAR(255)", "flag": "BOOLEAN"}
+    script = "\n".join(sql_builder.build(df, headers, column_types=types))
+
+    conn = sqlite3.connect(":memory:")
+    conn.executescript(script)
+    rows = conn.execute("SELECT id, price, name, flag FROM table_name").fetchall()
+    conn.close()
+
+    assert rows == [
+        (1, 9.5, "a", 1),
+        (0, 0.0, "O'Brien", 0),
+        (-3, 3.25, "zero below", 1),
+    ]
