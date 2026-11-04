@@ -14,13 +14,27 @@ BATCH_SIZE = 50
 
 
 def sql_literal(value):
-    """One cell as a SQL literal."""
+    """One cell as a SQL literal.
+
+    The type tests go through pandas rather than isinstance: a DataFrame hands
+    back numpy scalars, and while np.float64 subclasses Python float, np.int64
+    does not subclass int. isinstance(value, (int, float)) therefore missed
+    every integer column, sent it to the text branch, and `if value` there
+    turned a 0 into NULL.
+
+    Booleans are tested before numbers, because bool is a Number.
+    """
     if pd.isna(value):
         return "NULL"
-    if isinstance(value, (int, float)):
+    if pd.api.types.is_bool(value):
+        return "TRUE" if value else "FALSE"
+    if pd.api.types.is_number(value):
         return str(value)
-    text = str(value).replace("'", "''")
-    return f"'{text}'" if value else "NULL"
+    text = str(value)
+    if not text:
+        # An empty CSV field means no value. Unchanged.
+        return "NULL"
+    return "'" + text.replace("'", "''") + "'"
 
 
 def create_table(table_name, columns):
